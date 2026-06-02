@@ -151,7 +151,7 @@ class OTelLogsSourceGrpcServiceRequestsTest {
     private void setupLogsSource(OTelLogsSourceConfig config) {
         PluginSetting settings = new PluginSetting("OTelLogsGrpcService", null);
         settings.setPipelineName(TEST_PIPELINE_NAME);
-        SOURCE = new OTelLogsSource(config, pluginMetrics, pluginFactory, settings);
+        SOURCE = new OTelLogsSource(config, pluginMetrics, pluginFactory, settings, null);
     }
 
     @Test

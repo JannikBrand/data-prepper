@@ -19,6 +19,7 @@ import org.opensearch.dataprepper.exceptions.BufferWriteException;
 import org.opensearch.dataprepper.exceptions.RequestCancelledException;
 import org.opensearch.dataprepper.logging.DataPrepperMarkers;
 import org.opensearch.dataprepper.metrics.PluginMetrics;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.opensearch.dataprepper.model.buffer.Buffer;
 import org.opensearch.dataprepper.model.record.Record;
 import org.opensearch.dataprepper.model.trace.Span;
@@ -47,6 +48,7 @@ public class OTelTraceGrpcService extends TraceServiceGrpc.TraceServiceImplBase 
     private final int bufferWriteTimeoutInMillis;
     private final OTelProtoCodec.OTelProtoDecoder oTelProtoDecoder;
     private final Buffer<Record<Object>> buffer;
+    private final CircuitBreaker circuitBreaker;
 
     private final Counter requestsReceivedCounter;
     private final Counter successRequestsCounter;
@@ -59,8 +61,18 @@ public class OTelTraceGrpcService extends TraceServiceGrpc.TraceServiceImplBase 
                                 final Buffer<Record<Object>> buffer,
                                 final PluginMetrics pluginMetrics,
                                 final String metricsPrefix) {
+        this(bufferWriteTimeoutInMillis, oTelProtoDecoder, buffer, pluginMetrics, metricsPrefix, null);
+    }
+
+    public OTelTraceGrpcService(int bufferWriteTimeoutInMillis,
+                                final OTelProtoCodec.OTelProtoDecoder oTelProtoDecoder,
+                                final Buffer<Record<Object>> buffer,
+                                final PluginMetrics pluginMetrics,
+                                final String metricsPrefix,
+                                final CircuitBreaker circuitBreaker) {
         this.bufferWriteTimeoutInMillis = bufferWriteTimeoutInMillis;
         this.buffer = buffer;
+        this.circuitBreaker = circuitBreaker;
 
         if (metricsPrefix != null) {
             requestsReceivedCounter = pluginMetrics.counter(REQUESTS_RECEIVED, metricsPrefix);
@@ -95,6 +107,10 @@ public class OTelTraceGrpcService extends TraceServiceGrpc.TraceServiceImplBase 
     }
 
     private void processRequest(final ExportTraceServiceRequest request, final StreamObserver<ExportTraceServiceResponse> responseObserver) {
+        if (circuitBreaker != null && circuitBreaker.isOpen()) {
+            throw new BufferWriteException("Circuit breaker is open. Rejecting request before parsing.", null);
+        }
+
         final Collection<Span> spans;
 
         try {

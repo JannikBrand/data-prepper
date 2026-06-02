@@ -110,7 +110,7 @@ class OtelLogsSource_RetryInfoTest {
         PipelineDescription pipelineDescription = mock(PipelineDescription.class);
         lenient().when(pipelineDescription.getPipelineName()).thenReturn(TEST_PIPELINE_NAME);
 
-        SOURCE = new OTelLogsSource(oTelLogsSourceConfig, pluginMetrics, pluginFactory, pipelineDescription);
+        SOURCE = new OTelLogsSource(oTelLogsSourceConfig, pluginMetrics, pluginFactory, pipelineDescription, null);
         assertInstanceOf(OTelLogsDecoder.class, SOURCE.getDecoder());
     }
 

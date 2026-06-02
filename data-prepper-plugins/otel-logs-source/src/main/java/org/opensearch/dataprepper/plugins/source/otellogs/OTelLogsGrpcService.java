@@ -18,6 +18,7 @@ import org.opensearch.dataprepper.exceptions.BadRequestException;
 import org.opensearch.dataprepper.exceptions.BufferWriteException;
 import org.opensearch.dataprepper.exceptions.RequestCancelledException;
 import org.opensearch.dataprepper.metrics.PluginMetrics;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.opensearch.dataprepper.model.buffer.Buffer;
 import org.opensearch.dataprepper.model.log.OpenTelemetryLog;
 import org.opensearch.dataprepper.model.record.Record;
@@ -45,6 +46,8 @@ public class OTelLogsGrpcService extends LogsServiceGrpc.LogsServiceImplBase {
 
     private final Buffer<Record<Object>> buffer;
 
+    private final CircuitBreaker circuitBreaker;
+
     private final Counter requestsReceivedCounter;
 
     private final Counter successRequestsCounter;
@@ -57,8 +60,18 @@ public class OTelLogsGrpcService extends LogsServiceGrpc.LogsServiceImplBase {
                                final Buffer<Record<Object>> buffer,
                                final PluginMetrics pluginMetrics,
                                final String metricsPrefix) {
+        this(bufferWriteTimeoutInMillis, oTelProtoDecoder, buffer, pluginMetrics, metricsPrefix, null);
+    }
+
+    public OTelLogsGrpcService(int bufferWriteTimeoutInMillis,
+                               final OTelProtoCodec.OTelProtoDecoder oTelProtoDecoder,
+                               final Buffer<Record<Object>> buffer,
+                               final PluginMetrics pluginMetrics,
+                               final String metricsPrefix,
+                               final CircuitBreaker circuitBreaker) {
         this.bufferWriteTimeoutInMillis = bufferWriteTimeoutInMillis;
         this.buffer = buffer;
+        this.circuitBreaker = circuitBreaker;
 
         if (metricsPrefix != null) {
             requestsReceivedCounter = pluginMetrics.counter(REQUESTS_RECEIVED, metricsPrefix);
@@ -95,6 +108,10 @@ public class OTelLogsGrpcService extends LogsServiceGrpc.LogsServiceImplBase {
     }
 
     private void processRequest(final ExportLogsServiceRequest request, final StreamObserver<ExportLogsServiceResponse> responseObserver) {
+        if (circuitBreaker != null && circuitBreaker.isOpen()) {
+            throw new BufferWriteException("Circuit breaker is open. Rejecting request before parsing.", null);
+        }
+
         final List<OpenTelemetryLog> logs;
 
         try {

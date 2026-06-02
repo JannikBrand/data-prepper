@@ -20,6 +20,7 @@ import io.grpc.ServerInterceptors;
 import io.grpc.protobuf.services.ProtoReflectionService;
 import io.micrometer.core.instrument.Counter;
 import io.opentelemetry.proto.collector.logs.v1.LogsServiceGrpc;
+import org.opensearch.dataprepper.CircuitBreakerHttpDecorator;
 import org.opensearch.dataprepper.GrpcRequestExceptionHandler;
 import org.opensearch.dataprepper.armeria.authentication.GrpcAuthenticationProvider;
 import org.opensearch.dataprepper.http.LogThrottlingRejectHandler;
@@ -27,6 +28,7 @@ import org.opensearch.dataprepper.http.LogThrottlingStrategy;
 import org.opensearch.dataprepper.metrics.PluginMetrics;
 import org.opensearch.dataprepper.model.annotations.DataPrepperPlugin;
 import org.opensearch.dataprepper.model.annotations.DataPrepperPluginConstructor;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.opensearch.dataprepper.model.buffer.Buffer;
 import org.opensearch.dataprepper.model.codec.ByteDecoder;
 import org.opensearch.dataprepper.model.configuration.PipelineDescription;
@@ -77,6 +79,7 @@ public class OTelLogsSource implements Source<Record<Object>> {
     private final CertificateProviderFactory certificateProviderFactory;
     private final ByteDecoder byteDecoder;
     private final PluginFactory pluginFactory;
+    private final CircuitBreaker circuitBreaker;
     final Counter requestsTooLargeCounter;
     private Server server;
 
@@ -84,19 +87,22 @@ public class OTelLogsSource implements Source<Record<Object>> {
     public OTelLogsSource(final OTelLogsSourceConfig oTelLogsSourceConfig,
                           final PluginMetrics pluginMetrics,
                           final PluginFactory pluginFactory,
-                          final PipelineDescription pipelineDescription) {
-        this(oTelLogsSourceConfig, pluginMetrics, pluginFactory, new CertificateProviderFactory(oTelLogsSourceConfig), pipelineDescription);
+                          final PipelineDescription pipelineDescription,
+                          final CircuitBreaker circuitBreaker) {
+        this(oTelLogsSourceConfig, pluginMetrics, pluginFactory, new CertificateProviderFactory(oTelLogsSourceConfig), pipelineDescription, circuitBreaker);
     }
 
     // accessible only in the same package for unit test
     OTelLogsSource(final OTelLogsSourceConfig oTelLogsSourceConfig, final PluginMetrics pluginMetrics, final PluginFactory pluginFactory,
-                   final CertificateProviderFactory certificateProviderFactory, final PipelineDescription pipelineDescription) {
+                   final CertificateProviderFactory certificateProviderFactory, final PipelineDescription pipelineDescription,
+                   final CircuitBreaker circuitBreaker) {
         oTelLogsSourceConfig.validateAndInitializeCertAndKeyFileInS3();
         this.oTelLogsSourceConfig = oTelLogsSourceConfig;
         this.pluginMetrics = pluginMetrics;
         this.certificateProviderFactory = certificateProviderFactory;
         this.pipelineName = pipelineDescription.getPipelineName();
         this.pluginFactory = pluginFactory;
+        this.circuitBreaker = circuitBreaker;
         this.byteDecoder = new OTelLogsDecoder(oTelLogsSourceConfig.getOutputFormat());
         this.requestsTooLargeCounter = pluginMetrics.counter(HttpExceptionHandler.REQUESTS_TOO_LARGE);
     }
@@ -153,6 +159,10 @@ public class OTelLogsSource implements Source<Record<Object>> {
                 requestsTooLargeCounter.increment();
             }
         }, true);
+
+        if (circuitBreaker != null) {
+            serverBuilder.decorator(CircuitBreakerHttpDecorator.newDecorator(circuitBreaker, pluginMetrics));
+        }
 
         final GrpcAuthenticationProvider authProvider = createGrpcAuthenticationProvider(pluginFactory);
         authProvider.getHttpAuthenticationService().ifPresent(serverBuilder::decorator);
@@ -219,7 +229,8 @@ public class OTelLogsSource implements Source<Record<Object>> {
                 createOtelProtoDecoder(),
                 buffer,
                 pluginMetrics,
-                null
+                null,
+                circuitBreaker
         );
 
         final List<ServerInterceptor> interceptors = new ArrayList<>();

@@ -14,6 +14,7 @@ import org.opensearch.dataprepper.armeria.authentication.GrpcAuthenticationProvi
 import org.opensearch.dataprepper.metrics.PluginMetrics;
 import org.opensearch.dataprepper.model.annotations.DataPrepperPlugin;
 import org.opensearch.dataprepper.model.annotations.DataPrepperPluginConstructor;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.opensearch.dataprepper.model.buffer.Buffer;
 import org.opensearch.dataprepper.model.codec.ByteDecoder;
 import org.opensearch.dataprepper.model.configuration.PipelineDescription;
@@ -50,24 +51,28 @@ public class OTelMetricsSource implements Source<Record<? extends Metric>> {
     private final PluginMetrics pluginMetrics;
     private final GrpcAuthenticationProvider authenticationProvider;
     private final CertificateProviderFactory certificateProviderFactory;
+    private final CircuitBreaker circuitBreaker;
     private Server server;
     private final ByteDecoder byteDecoder;
 
     @DataPrepperPluginConstructor
     public OTelMetricsSource(final OTelMetricsSourceConfig oTelMetricsSourceConfig, final PluginMetrics pluginMetrics,
-                             final PluginFactory pluginFactory, final PipelineDescription pipelineDescription) {
-        this(oTelMetricsSourceConfig, pluginMetrics, pluginFactory, new CertificateProviderFactory(oTelMetricsSourceConfig), pipelineDescription);
+                             final PluginFactory pluginFactory, final PipelineDescription pipelineDescription,
+                             final CircuitBreaker circuitBreaker) {
+        this(oTelMetricsSourceConfig, pluginMetrics, pluginFactory, new CertificateProviderFactory(oTelMetricsSourceConfig), pipelineDescription, circuitBreaker);
     }
 
     // accessible only in the same package for unit test
     OTelMetricsSource(final OTelMetricsSourceConfig oTelMetricsSourceConfig, final PluginMetrics pluginMetrics, final PluginFactory pluginFactory,
-                      final CertificateProviderFactory certificateProviderFactory, final PipelineDescription pipelineDescription) {
+                      final CertificateProviderFactory certificateProviderFactory, final PipelineDescription pipelineDescription,
+                      final CircuitBreaker circuitBreaker) {
         oTelMetricsSourceConfig.validateAndInitializeCertAndKeyFileInS3();
         this.oTelMetricsSourceConfig = oTelMetricsSourceConfig;
         this.pluginMetrics = pluginMetrics;
         this.certificateProviderFactory = certificateProviderFactory;
         this.pipelineName = pipelineDescription.getPipelineName();
         this.authenticationProvider = createAuthenticationProvider(pluginFactory);
+        this.circuitBreaker = circuitBreaker;
         this.byteDecoder = new OTelMetricDecoder(oTelMetricsSourceConfig.getOutputFormat());
     }
 
@@ -89,11 +94,12 @@ public class OTelMetricsSource implements Source<Record<? extends Metric>> {
                     buffer,
                     oTelMetricsSourceConfig.getBufferPartitionKeys(),
                     pluginMetrics,
-                    null
+                    null,
+                    circuitBreaker
             );
 
             ServerConfiguration serverConfiguration = ConvertConfiguration.convertConfiguration(oTelMetricsSourceConfig);
-            CreateServer createServer = new CreateServer(serverConfiguration, LOG, pluginMetrics, PLUGIN_NAME, pipelineName);
+            CreateServer createServer = new CreateServer(serverConfiguration, LOG, pluginMetrics, PLUGIN_NAME, pipelineName, circuitBreaker);
             CertificateProvider certificateProvider = null;
             if (oTelMetricsSourceConfig.isSsl() || oTelMetricsSourceConfig.useAcmCertForSSL()) {
                 certificateProvider = certificateProviderFactory.getCertificateProvider();

@@ -12,9 +12,11 @@ import com.linecorp.armeria.server.ServerBuilder;
 import com.linecorp.armeria.server.encoding.DecodingService;
 import com.linecorp.armeria.server.healthcheck.HealthCheckService;
 
+import org.opensearch.dataprepper.CircuitBreakerHttpDecorator;
 import org.opensearch.dataprepper.metrics.PluginMetrics;
 import org.opensearch.dataprepper.model.annotations.DataPrepperPlugin;
 import org.opensearch.dataprepper.model.annotations.DataPrepperPluginConstructor;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.opensearch.dataprepper.model.buffer.Buffer;
 import org.opensearch.dataprepper.model.codec.ByteDecoder;
 import org.opensearch.dataprepper.model.configuration.PipelineDescription;
@@ -53,24 +55,27 @@ public class OTelTraceSource implements Source<Record<Object>> {
     private final PluginMetrics pluginMetrics;
     private final PluginFactory pluginFactory;
     private final CertificateProviderFactory certificateProviderFactory;
+    private final CircuitBreaker circuitBreaker;
     private final String pipelineName;
     private Server server;
     private final ByteDecoder byteDecoder;
 
     @DataPrepperPluginConstructor
     public OTelTraceSource(final OTelTraceSourceConfig oTelTraceSourceConfig, final PluginMetrics pluginMetrics, final PluginFactory pluginFactory,
-                           final PipelineDescription pipelineDescription) {
-        this(oTelTraceSourceConfig, pluginMetrics, pluginFactory, new CertificateProviderFactory(oTelTraceSourceConfig), pipelineDescription);
+                           final PipelineDescription pipelineDescription, final CircuitBreaker circuitBreaker) {
+        this(oTelTraceSourceConfig, pluginMetrics, pluginFactory, new CertificateProviderFactory(oTelTraceSourceConfig), pipelineDescription, circuitBreaker);
     }
 
     // accessible only in the same package for unit test
     OTelTraceSource(final OTelTraceSourceConfig oTelTraceSourceConfig, final PluginMetrics pluginMetrics, final PluginFactory pluginFactory,
-                    final CertificateProviderFactory certificateProviderFactory, final PipelineDescription pipelineDescription) {
+                    final CertificateProviderFactory certificateProviderFactory, final PipelineDescription pipelineDescription,
+                    final CircuitBreaker circuitBreaker) {
         oTelTraceSourceConfig.validateAndInitializeCertAndKeyFileInS3();
         this.oTelTraceSourceConfig = oTelTraceSourceConfig;
         this.pluginMetrics = pluginMetrics;
         this.pluginFactory = pluginFactory;
         this.certificateProviderFactory = certificateProviderFactory;
+        this.circuitBreaker = circuitBreaker;
         this.pipelineName = pipelineDescription.getPipelineName();
         this.byteDecoder = new OTelTraceDecoder(oTelTraceSourceConfig.getOutputFormat());
     }
@@ -88,6 +93,10 @@ public class OTelTraceSource implements Source<Record<Object>> {
 
         if (server == null) {
             ServerBuilder serverBuilder = Server.builder().port(oTelTraceSourceConfig.getPort(), inferProtocolFromConfig());
+
+            if (circuitBreaker != null) {
+                serverBuilder.decorator(CircuitBreakerHttpDecorator.newDecorator(circuitBreaker, pluginMetrics));
+            }
 
             configureHeadersAndHealthCheck(serverBuilder);
             configureTLS(serverBuilder);
@@ -133,7 +142,7 @@ public class OTelTraceSource implements Source<Record<Object>> {
     }
 
     private void configureGrpcService(ServerBuilder serverBuilder, final OTelProtoCodec.OTelProtoDecoder otelProtoDecoder, Buffer<Record<Object>> buffer) {
-        com.linecorp.armeria.server.grpc.GrpcService grpcService = new GrpcService(pluginFactory, otelProtoDecoder, oTelTraceSourceConfig, pluginMetrics, pipelineName).create(buffer, serverBuilder);
+        com.linecorp.armeria.server.grpc.GrpcService grpcService = new GrpcService(pluginFactory, otelProtoDecoder, oTelTraceSourceConfig, pluginMetrics, pipelineName, circuitBreaker).create(buffer, serverBuilder);
 
         if (CompressionOption.NONE.equals(oTelTraceSourceConfig.getCompression())) {
             serverBuilder.service(grpcService);

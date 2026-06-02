@@ -21,6 +21,7 @@ import io.grpc.ServerInterceptor;
 import io.grpc.ServerInterceptors;
 import io.grpc.protobuf.services.ProtoReflectionService;
 import io.netty.handler.ssl.ClientAuth;
+import org.opensearch.dataprepper.CircuitBreakerHttpDecorator;
 import org.opensearch.dataprepper.GrpcRequestExceptionHandler;
 import org.opensearch.dataprepper.HttpRequestExceptionHandler;
 import org.opensearch.dataprepper.armeria.authentication.ArmeriaHttpAuthenticationProvider;
@@ -29,6 +30,7 @@ import org.opensearch.dataprepper.http.LogThrottlingRejectHandler;
 import org.opensearch.dataprepper.http.LogThrottlingStrategy;
 import org.opensearch.dataprepper.http.certificate.CertificateProviderFactory;
 import org.opensearch.dataprepper.metrics.PluginMetrics;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.opensearch.dataprepper.model.buffer.Buffer;
 import org.opensearch.dataprepper.model.log.Log;
 import org.opensearch.dataprepper.model.record.Record;
@@ -51,6 +53,7 @@ public class CreateServer {
     private final ServerConfiguration serverConfiguration;
     private final Logger LOG;
     private final PluginMetrics pluginMetrics;
+    private final CircuitBreaker circuitBreaker;
     private String sourceName;
     private String pipelineName;
 
@@ -61,11 +64,17 @@ public class CreateServer {
     private static final RetryInfoConfig DEFAULT_RETRY_INFO = new RetryInfoConfig(Duration.ofMillis(100), Duration.ofMillis(2000));
 
     public CreateServer(final ServerConfiguration serverConfiguration, final Logger LOG, final PluginMetrics pluginMetrics, final String sourceName, final String pipelineName) {
+        this(serverConfiguration, LOG, pluginMetrics, sourceName, pipelineName, null);
+    }
+
+    public CreateServer(final ServerConfiguration serverConfiguration, final Logger LOG, final PluginMetrics pluginMetrics,
+                        final String sourceName, final String pipelineName, final CircuitBreaker circuitBreaker) {
         this.serverConfiguration = serverConfiguration;
         this.LOG = LOG;
         this.pluginMetrics = pluginMetrics;
         this.sourceName = sourceName;
         this.pipelineName = pipelineName;
+        this.circuitBreaker = circuitBreaker;
     }
 
     /**
@@ -153,6 +162,11 @@ public class CreateServer {
 
         final ServerBuilder sb = Server.builder();
         sb.disableServerHeader();
+
+        if (circuitBreaker != null) {
+            sb.decorator(CircuitBreakerHttpDecorator.newDecorator(circuitBreaker, pluginMetrics));
+        }
+
         if (CompressionOption.NONE.equals(serverConfiguration.getCompression())) {
             sb.service(grpcServiceBuilder.build());
         } else {
@@ -238,6 +252,10 @@ public class CreateServer {
         final ServerBuilder sb = Server.builder();
 
         sb.disableServerHeader();
+
+        if (circuitBreaker != null) {
+            sb.decorator(CircuitBreakerHttpDecorator.newDecorator(circuitBreaker, pluginMetrics));
+        }
 
         if (serverConfiguration.isSsl()) {
             LOG.info("Creating http source with SSL/TLS enabled.");

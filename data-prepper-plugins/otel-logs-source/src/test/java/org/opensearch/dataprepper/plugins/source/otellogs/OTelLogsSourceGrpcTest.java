@@ -197,7 +197,7 @@ class OTelLogsSourceGrpcTest {
     }
 
     private void setupLogsSource(OTelLogsSourceConfig config) {
-        SOURCE = new OTelLogsSource(config, pluginMetrics, pluginFactory, pipelineDescription);
+        SOURCE = new OTelLogsSource(config, pluginMetrics, pluginFactory, pipelineDescription, null);
     }
 
     @Test
@@ -217,7 +217,7 @@ class OTelLogsSourceGrpcTest {
             settingsMap.put("sslKeyCertChainFile", "data/certificate/test_cert.crt");
             settingsMap.put("sslKeyFile", "data/certificate/test_decrypted_key.key");
 
-            final OTelLogsSource source = new OTelLogsSource(createBuilderForConfigWithSsl().build(), pluginMetrics, pluginFactory, pipelineDescription);
+            final OTelLogsSource source = new OTelLogsSource(createBuilderForConfigWithSsl().build(), pluginMetrics, pluginFactory, pipelineDescription, null);
             source.start(buffer);
             source.stop();
 
@@ -244,7 +244,7 @@ class OTelLogsSourceGrpcTest {
             when(certificate.getPrivateKey()).thenReturn(keyAsString);
             when(certificateProvider.getCertificate()).thenReturn(certificate);
             when(certificateProviderFactory.getCertificateProvider()).thenReturn(certificateProvider);
-            final OTelLogsSource source = new OTelLogsSource(createBuilderForConfigWithAcmeSsl().build(), pluginMetrics, pluginFactory, certificateProviderFactory, pipelineDescription);
+            final OTelLogsSource source = new OTelLogsSource(createBuilderForConfigWithAcmeSsl().build(), pluginMetrics, pluginFactory, certificateProviderFactory, pipelineDescription, null);
             source.start(buffer);
             source.stop();
 
@@ -278,7 +278,7 @@ class OTelLogsSourceGrpcTest {
             when(certificateProvider.getCertificate()).thenReturn(certificate);
             when(certificateProviderFactory.getCertificateProvider()).thenReturn(certificateProvider);
 
-            final OTelLogsSource source = new OTelLogsSource(createBuilderForConfigWithAcmeSsl().build(), pluginMetrics, pluginFactory, certificateProviderFactory, pipelineDescription);
+            final OTelLogsSource source = new OTelLogsSource(createBuilderForConfigWithAcmeSsl().build(), pluginMetrics, pluginFactory, certificateProviderFactory, pipelineDescription, null);
             source.start(buffer);
             source.stop();
         }
@@ -309,7 +309,7 @@ class OTelLogsSourceGrpcTest {
             when(certificateProvider.getCertificate()).thenReturn(certificate);
             when(certificateProviderFactory.getCertificateProvider()).thenReturn(certificateProvider);
 
-            final OTelLogsSource source = new OTelLogsSource(createBuilderForConfigWithAcmeSsl().healthCheck(false).build(), pluginMetrics, pluginFactory, certificateProviderFactory, pipelineDescription);
+            final OTelLogsSource source = new OTelLogsSource(createBuilderForConfigWithAcmeSsl().healthCheck(false).build(), pluginMetrics, pluginFactory, certificateProviderFactory, pipelineDescription, null);
             source.start(buffer);
             source.stop();
         }
@@ -329,7 +329,7 @@ class OTelLogsSourceGrpcTest {
     void testRunAnotherSourceWithSamePort() {
         SOURCE.start(buffer);
 
-        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription);
+        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription, null);
 
         //Expect RuntimeException because when port is already in use, BindException is thrown which is not RuntimeException
         assertThrows(RuntimeException.class, () -> source.start(buffer));
@@ -337,7 +337,7 @@ class OTelLogsSourceGrpcTest {
 
     @Test
     void testStartWithEmptyBuffer() {
-        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription);
+        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription, null);
         assertThrows(IllegalStateException.class, () -> source.start(null));
     }
 
@@ -347,7 +347,7 @@ class OTelLogsSourceGrpcTest {
                 .path("/test-pipeline/v1/logs")
                 .build();
         final OTelLogsSource source = new OTelLogsSource(config, pluginMetrics, pluginFactory,
-                certificateProviderFactory, pipelineDescription);
+                certificateProviderFactory, pipelineDescription, null);
         source.start(buffer);
         source.stop();
     }
@@ -355,7 +355,7 @@ class OTelLogsSourceGrpcTest {
     @Test
     void testStartWithServerExecutionExceptionNoCause() throws ExecutionException, InterruptedException {
         // Prepare
-        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription);
+        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription, null);
         try (MockedStatic<Server> armeriaServerMock = Mockito.mockStatic(Server.class)) {
             armeriaServerMock.when(Server::builder).thenReturn(serverBuilder);
             when(completableFuture.get()).thenThrow(new ExecutionException("", null));
@@ -368,7 +368,7 @@ class OTelLogsSourceGrpcTest {
     @Test
     void testStartWithServerExecutionExceptionWithCause() throws ExecutionException, InterruptedException {
         // Prepare
-        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription);
+        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription, null);
         try (MockedStatic<Server> armeriaServerMock = Mockito.mockStatic(Server.class)) {
             armeriaServerMock.when(Server::builder).thenReturn(serverBuilder);
             final NullPointerException expCause = new NullPointerException();
@@ -382,7 +382,7 @@ class OTelLogsSourceGrpcTest {
 
     @Test
     void testStopWithServerExecutionExceptionNoCause() throws ExecutionException, InterruptedException {
-        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription);
+        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription, null);
         try (MockedStatic<Server> armeriaServerMock = Mockito.mockStatic(Server.class)) {
             armeriaServerMock.when(Server::builder).thenReturn(serverBuilder);
             source.start(buffer);
@@ -396,7 +396,7 @@ class OTelLogsSourceGrpcTest {
 
     @Test
     void testStartWithInterruptedException() throws ExecutionException, InterruptedException {
-        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription);
+        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription, null);
         try (MockedStatic<Server> armeriaServerMock = Mockito.mockStatic(Server.class)) {
             armeriaServerMock.when(Server::builder).thenReturn(serverBuilder);
             when(completableFuture.get()).thenThrow(new InterruptedException());
@@ -410,7 +410,7 @@ class OTelLogsSourceGrpcTest {
     @Test
     void testStopWithServerExecutionExceptionWithCause() throws ExecutionException, InterruptedException {
         // Prepare
-        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription);
+        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription, null);
         try (MockedStatic<Server> armeriaServerMock = Mockito.mockStatic(Server.class)) {
             armeriaServerMock.when(Server::builder).thenReturn(serverBuilder);
             source.start(buffer);
@@ -427,7 +427,7 @@ class OTelLogsSourceGrpcTest {
     @Test
     void testStopWithInterruptedException() throws ExecutionException, InterruptedException {
         // Prepare
-        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription);
+        final OTelLogsSource source = new OTelLogsSource(createDefaultConfig(), pluginMetrics, pluginFactory, pipelineDescription, null);
         try (MockedStatic<Server> armeriaServerMock = Mockito.mockStatic(Server.class)) {
             armeriaServerMock.when(Server::builder).thenReturn(serverBuilder);
             source.start(buffer);

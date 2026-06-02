@@ -128,7 +128,7 @@ class OTelLogsSourceUnframedRequestTest {
     }
 
     private void configureSource(OTelLogsSourceConfig config) {
-        SOURCE = new OTelLogsSource(config, pluginMetrics, pluginFactory, pipelineDescription);
+        SOURCE = new OTelLogsSource(config, pluginMetrics, pluginFactory, pipelineDescription, null);
         assertInstanceOf(OTelLogsDecoder.class, SOURCE.getDecoder());
     }
 

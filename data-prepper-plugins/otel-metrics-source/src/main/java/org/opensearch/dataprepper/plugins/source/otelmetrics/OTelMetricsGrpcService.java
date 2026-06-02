@@ -19,6 +19,7 @@ import org.opensearch.dataprepper.exceptions.RequestCancelledException;
 import static org.opensearch.dataprepper.plugins.otel.codec.OTelProtoCodec.DEFAULT_EXPONENTIAL_HISTOGRAM_MAX_ALLOWED_SCALE;
 import org.opensearch.dataprepper.plugins.otel.codec.OTelProtoCodec;
 import org.opensearch.dataprepper.metrics.PluginMetrics;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.opensearch.dataprepper.model.buffer.Buffer;
 import org.opensearch.dataprepper.model.record.Record;
 import org.opensearch.dataprepper.model.metric.Metric;
@@ -44,6 +45,7 @@ public class OTelMetricsGrpcService extends MetricsServiceGrpc.MetricsServiceImp
     private final int bufferWriteTimeoutInMillis;
     private final OTelProtoCodec.OTelProtoDecoder oTelProtoDecoder;
     private final Buffer<Record<? extends Metric>> buffer;
+    private final CircuitBreaker circuitBreaker;
 
     private final Counter requestsReceivedCounter;
     private final Counter successRequestsCounter;
@@ -59,8 +61,19 @@ public class OTelMetricsGrpcService extends MetricsServiceGrpc.MetricsServiceImp
                                   final Set<String> bufferPartitionKeys,
                                   final PluginMetrics pluginMetrics,
                                   final String metricsPrefix) {
+        this(bufferWriteTimeoutInMillis, oTelProtoDecoder, buffer, bufferPartitionKeys, pluginMetrics, metricsPrefix, null);
+    }
+
+    public OTelMetricsGrpcService(int bufferWriteTimeoutInMillis,
+                                  final OTelProtoCodec.OTelProtoDecoder oTelProtoDecoder,
+                                  Buffer<Record<? extends Metric>> buffer,
+                                  final Set<String> bufferPartitionKeys,
+                                  final PluginMetrics pluginMetrics,
+                                  final String metricsPrefix,
+                                  final CircuitBreaker circuitBreaker) {
         this.bufferWriteTimeoutInMillis = bufferWriteTimeoutInMillis;
         this.buffer = buffer;
+        this.circuitBreaker = circuitBreaker;
 
         this.bufferPartitionKeys = bufferPartitionKeys;
         if (metricsPrefix != null) {
@@ -99,6 +112,10 @@ public class OTelMetricsGrpcService extends MetricsServiceGrpc.MetricsServiceImp
     }
 
     private void processRequest(final ExportMetricsServiceRequest request, final StreamObserver<ExportMetricsServiceResponse> responseObserver) {
+        if (circuitBreaker != null && circuitBreaker.isOpen()) {
+            throw new BufferWriteException("Circuit breaker is open. Rejecting request before parsing.", null);
+        }
+
         try {
             if (buffer.isByteBuffer()) {
                 if (bufferPartitionKeys != null && !bufferPartitionKeys.isEmpty()) {
