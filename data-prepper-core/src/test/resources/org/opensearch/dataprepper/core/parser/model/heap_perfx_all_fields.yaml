@@ -1,0 +1,6 @@
+usage: 1024b
+close_usage: 512b
+reset: 3s
+check_interval: 250ms
+on_demand_sampling: true
+gc_on_trip: false

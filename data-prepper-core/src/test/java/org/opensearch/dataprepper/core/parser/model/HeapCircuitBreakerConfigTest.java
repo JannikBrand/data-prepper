@@ -64,4 +64,35 @@ class HeapCircuitBreakerConfigTest {
         assertThat(config.getReset(), notNullValue());
         assertThat(config.getReset(), equalTo(HeapCircuitBreakerConfig.DEFAULT_RESET));
     }
+
+    /**
+     * Perfx-patch defaults when the new fields are absent from config:
+     *   close_usage           -> null (falls back to strict close semantics)
+     *   on_demand_sampling    -> true
+     *   gc_on_trip            -> false
+     */
+    @Test
+    void perfx_new_fields_default_when_absent() throws IOException {
+        final InputStream resourceStream = this.getClass().getResourceAsStream("heap_with_reset.yaml");
+
+        final HeapCircuitBreakerConfig config = objectMapper.readValue(resourceStream, HeapCircuitBreakerConfig.class);
+
+        assertThat(config.getCloseUsage(), equalTo(null));
+        assertThat(config.isOnDemandSampling(), equalTo(true));
+        assertThat(config.isGcOnTrip(), equalTo(false));
+    }
+
+    @Test
+    void perfx_new_fields_deserialize_when_present() throws IOException {
+        final InputStream resourceStream = this.getClass().getResourceAsStream("heap_perfx_all_fields.yaml");
+
+        final HeapCircuitBreakerConfig config = objectMapper.readValue(resourceStream, HeapCircuitBreakerConfig.class);
+
+        assertThat(config.getUsage().getBytes(), equalTo(1024L));
+        assertThat(config.getCloseUsage(), notNullValue());
+        assertThat(config.getCloseUsage().getBytes(), equalTo(512L));
+        assertThat(config.getCheckInterval(), equalTo(Duration.ofMillis(250)));
+        assertThat(config.isOnDemandSampling(), equalTo(true));
+        assertThat(config.isGcOnTrip(), equalTo(false));
+    }
 }
