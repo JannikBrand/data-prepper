@@ -20,6 +20,7 @@ import org.opensearch.dataprepper.core.peerforwarder.server.PeerForwarderServerP
 import org.opensearch.dataprepper.core.peerforwarder.server.ResponseHandler;
 import org.opensearch.dataprepper.metrics.PluginMetrics;
 import org.opensearch.dataprepper.model.acknowledgements.AcknowledgementSetManager;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +28,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 import javax.inject.Named;
+import java.util.Optional;
 
 
 @Configuration
@@ -115,10 +117,17 @@ class PeerForwarderAppConfig {
     public PeerForwarderHttpServerProvider peerForwarderHttpServerProvider(
             final PeerForwarderConfiguration peerForwarderConfiguration,
             final CertificateProviderFactory certificateProviderFactory,
-            final PeerForwarderHttpService peerForwarderHttpService
+            final PeerForwarderHttpService peerForwarderHttpService,
+            // Perfx patch: gate the peer-forwarder HTTP server with the same circuit
+            // breaker as the OTel sources. Optional so tests / configs without a
+            // breaker keep working.
+            @Autowired(required = false) final Optional<CircuitBreaker> circuitBreaker,
+            @Qualifier("peerForwarderMetrics") final PluginMetrics pluginMetrics
     ) {
         return new PeerForwarderHttpServerProvider(peerForwarderConfiguration,
-                certificateProviderFactory, peerForwarderHttpService);
+                certificateProviderFactory, peerForwarderHttpService,
+                circuitBreaker != null ? circuitBreaker.orElse(null) : null,
+                pluginMetrics);
     }
 
     @Bean

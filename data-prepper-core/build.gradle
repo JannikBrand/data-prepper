@@ -34,6 +34,8 @@ dependencies {
     implementation project(':data-prepper-plugins:blocking-buffer')
     implementation project(':data-prepper-plugins:common')
     implementation project(':data-prepper-plugins:encryption-plugin')
+    // Perfx patch: needed for CircuitBreakerHttpDecorator on the peer-forwarder server.
+    implementation project(':data-prepper-plugins:armeria-common')
     implementation project(':data-prepper-logstash-configuration')
     implementation project(':data-prepper-pipeline-parser')
     implementation project(':data-prepper-plugin-framework')

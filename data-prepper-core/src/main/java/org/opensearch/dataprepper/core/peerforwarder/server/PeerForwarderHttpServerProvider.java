@@ -13,9 +13,12 @@ import com.linecorp.armeria.server.Server;
 import com.linecorp.armeria.server.ServerBuilder;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.util.FingerprintTrustManagerFactory;
+import org.opensearch.dataprepper.CircuitBreakerHttpDecorator;
 import org.opensearch.dataprepper.core.peerforwarder.ForwardingAuthentication;
 import org.opensearch.dataprepper.core.peerforwarder.PeerForwarderConfiguration;
 import org.opensearch.dataprepper.core.peerforwarder.certificate.CertificateProviderFactory;
+import org.opensearch.dataprepper.metrics.PluginMetrics;
+import org.opensearch.dataprepper.model.breaker.CircuitBreaker;
 import org.opensearch.dataprepper.plugins.certificate.CertificateProvider;
 import org.opensearch.dataprepper.plugins.certificate.model.Certificate;
 import org.slf4j.Logger;
@@ -38,13 +41,27 @@ public class PeerForwarderHttpServerProvider implements Provider<Server> {
     private final PeerForwarderConfiguration peerForwarderConfiguration;
     private final CertificateProviderFactory certificateProviderFactory;
     private final PeerForwarderHttpService peerForwarderHttpService;
+    // Perfx patch: gate the peer-forwarder HTTP server with the same circuit breaker
+    // that gates the OTel sources. Nullable — pass null to preserve upstream behavior.
+    private final CircuitBreaker circuitBreaker;
+    private final PluginMetrics pluginMetrics;
 
     public PeerForwarderHttpServerProvider(final PeerForwarderConfiguration peerForwarderConfiguration,
                                            final CertificateProviderFactory certificateProviderFactory,
                                            final PeerForwarderHttpService peerForwarderHttpService) {
+        this(peerForwarderConfiguration, certificateProviderFactory, peerForwarderHttpService, null, null);
+    }
+
+    public PeerForwarderHttpServerProvider(final PeerForwarderConfiguration peerForwarderConfiguration,
+                                           final CertificateProviderFactory certificateProviderFactory,
+                                           final PeerForwarderHttpService peerForwarderHttpService,
+                                           final CircuitBreaker circuitBreaker,
+                                           final PluginMetrics pluginMetrics) {
         this.peerForwarderConfiguration = peerForwarderConfiguration;
         this.certificateProviderFactory = certificateProviderFactory;
         this.peerForwarderHttpService = peerForwarderHttpService;
+        this.circuitBreaker = circuitBreaker;
+        this.pluginMetrics = pluginMetrics;
     }
 
     @Override
@@ -52,6 +69,17 @@ public class PeerForwarderHttpServerProvider implements Provider<Server> {
         final ServerBuilder sb = Server.builder();
 
         sb.disableServerHeader();
+
+        // Perfx patch: install the HTTP circuit-breaker decorator BEFORE the
+        // annotated-service body aggregator so that when heap is exhausted we
+        // return 503 without letting Armeria's HttpMessageAggregator accumulate
+        // the forwarded batch onto heap. Under upstream Data Prepper this server
+        // is un-gated — OOMs observed in load testing came from
+        // HttpMessageAggregator.aggregateData inside DefaultAnnotatedService.serve1
+        // on this port even after the OTel-source decorators started rejecting.
+        if (circuitBreaker != null && pluginMetrics != null) {
+            sb.decorator(CircuitBreakerHttpDecorator.newDecorator(circuitBreaker, pluginMetrics));
+        }
 
         if (peerForwarderConfiguration.isSsl()) {
             final CertificateProvider certificateProvider = certificateProviderFactory.getCertificateProvider();
